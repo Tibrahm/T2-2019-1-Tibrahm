@@ -46,6 +46,8 @@ typedef struct snek
   uint8_t grounds;
   /** Numero de apoyos en espinas actuales */
   uint8_t spikes;
+  // hash de la serpiente
+  uint64_t hash;
 } Snek;
 
 ////////////////////////////////////////////////////////////////////////////////

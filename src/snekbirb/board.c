@@ -1,5 +1,7 @@
 #include "board.h"
 #include <stdlib.h>
+#include "../random/pcg_basic.h"
+#include <math.h>
 
 /** Inicializa el tablero a partir del archivo */
 Board* board_init(FILE* file)
@@ -19,8 +21,24 @@ Board* board_init(FILE* file)
     {
       // Leo el tipo de elemento en la posicion dada
       fscanf(file, "%u", &board -> cells[row][col].type);
+      // Le agrego un numero random a la casilla para funcion de hash
+      board -> cells[row][col].random = get_random();
+
+      //printf("[%d.%d]",row, col);
     }
+    //printf("\n");
   }
+
+  // le asigno la memoria al hash actual
+  board -> actual = malloc(sizeof(Hash*));
+
+  // Creo la matriz de estados de hash del tablero
+  board -> matriz = malloc(sizeof(Hash*) * 1000000);
+  for (int celda = 0; celda < 1000000; celda ++)
+  {
+    board -> matriz[celda] = malloc(sizeof(Hash*) * 100);
+  }
+
 
   // Veo para cada celda de la matriz, la altura con respecto al terreno y el
   // tipo de celda a la que cae
@@ -61,12 +79,25 @@ Board* board_init(FILE* file)
   uint8_t snek_length;
   fscanf(file, "%hhu %hhu %hhu", &snek_row, &snek_col, &snek_length);
 
+  // lista con direcciones de snker inicial
+  uint64_t* direc_snek;
+  direc_snek = malloc(sizeof(uint64_t)*(snek_length-1));
+
+  //Aqui guardo el num aleatorio de la cabeza del snek_col
+  uint64_t cabeza;
+
   // Itero sobre las posiciones agregandolos al snek
   for (int i = 0; i < snek_length; i++)
   {
     // Leo la direccion de la siguiente parte del snek
     Direction dir;
     fscanf(file, "%u", &dir);
+
+    //Agrego direcciones a la lista de snek
+    if (i > 0)
+    {
+      direc_snek[i-1]= dir;
+    }
 
     // Calculo la posicion del nodo segun la direccion
     switch (dir)
@@ -94,6 +125,13 @@ Board* board_init(FILE* file)
       case HEAD: break;
     }
 
+    //Agrego el valor del tablero donde se encuentra la cabeza del snek
+    if (i == 0)
+    {
+      cabeza = board -> cells[snek_row][snek_col].random;
+    }
+
+
     // Creo el nodo y lo agrego al snek
     Node* node = node_init(snek_row, snek_col);
     snek_expand(board -> snek, node);
@@ -103,6 +141,39 @@ Board* board_init(FILE* file)
     if (type == WALL) board -> snek -> grounds++;
     else if (type == SPIKE) board -> snek -> spikes++;
   }
+
+  // var que guarda valor hash snek
+  uint64_t ser;
+  ser = 0;
+  // Valor para base y exponente
+  uint64_t base;
+  base = 4;
+  uint64_t exp;
+  exp = snek_length-1;
+
+  // Primero genero hash snek
+  for (int var = 0; var < exp; var++)
+  {
+    ser += direc_snek[var]*pow(base,(exp-1-var));
+  }
+
+  // Guardamos el valor hash de la serpiente
+  board -> snek -> hash = ser;
+
+  //printf("el valor de hash del snek inicial es: %lu \n", board -> snek -> hash);
+
+  //Ahora calculamos el hash del tablero
+  uint64_t tablero;
+  tablero = ser ^ cabeza;
+
+  //Asignamos el valor hash al valor actual del tablero
+  board -> actual->valor = tablero ;
+
+  //printf("el valor inicial de hash es %lu\n", board -> actual->valor );
+
+
+  //guardo el primer estado del tablero en la matriz
+  board -> matriz[tablero%1000000][0].valor = tablero;
 
   // Retorno el tablero
   return board;
@@ -118,9 +189,17 @@ void board_destroy(Board* board)
   }
   free(board -> cells);
 
+  // lebibero matriz de estados de hash
+  for (int i = 0; i<1000; i++)
+  {
+    free(board -> matriz[i]);
+  }
+  free(board -> matriz);
   // Libero el tablero
   free(board);
 }
+
+
 
 /** Copia el snek y hace el movimiento, luego retorna el nuevo snek. Si el
 movimiento no es valido o mata a la serpiente, retorno NULL */
@@ -128,6 +207,9 @@ Snek* board_move(Board* board, Direction dir)
 {
   // Snek
   Snek* snek = board -> snek;
+
+
+
 
   // Calculo la posicion donde va a moverse la cabeza de la serpiente segun la direccion
   uint8_t delta_row = 0;
@@ -157,6 +239,9 @@ Snek* board_move(Board* board, Direction dir)
   }
   uint8_t row = snek -> head -> row + delta_row;
   uint8_t col = snek -> head -> col + delta_col;
+
+
+
 
   // Si salgo del mapa, retorno NULL
   if (row >= board -> height || row < 0 || col >= board -> width || col < 0)
@@ -189,6 +274,14 @@ Snek* board_move(Board* board, Direction dir)
   // Hago el movimiento
   snek_move(copy, dir);
 
+
+  // Si estoy apoyado solo en espinas, libero la serpiente nueva y retorno NULL
+  if (copy -> spikes > 0 && copy -> grounds == 0)
+  {
+    snek_destroy(copy);
+    return NULL;
+  }
+
   // Si la cabeza ahora se apoya en algo, actualizo los apoyos
   // Si la cola esta apoyada en algo, actualizo el numero de apoyos
   uint8_t head_row = copy -> head -> row;
@@ -206,16 +299,14 @@ Snek* board_move(Board* board, Direction dir)
     return copy;
   }
 
-  // Si estoy apoyado solo en espinas, libero la serpiente nueva y retorno NULL
-  if (copy -> spikes > 0 && copy -> grounds == 0)
-  {
-    snek_destroy(copy);
-    return NULL;
-  }
 
-  // Si el snek cae, lo muevo hacia abajo
+
+  // Si el snek cae, lo muevo hacia abajo y calculo el hash desde el estado donde cae
   if (copy -> spikes == 0 && copy -> grounds == 0)
   {
+
+    //printf("caaaaaaaaaaeeeeeeeeeeeeeeee\n" );
+
     // Veo cuanto tiene que caer y los nuevos apoyos
     uint8_t fall = board -> height;
     uint8_t spikes = 0;
@@ -271,8 +362,88 @@ Snek* board_move(Board* board, Direction dir)
       snek_fall(copy, fall - 1);
       copy -> grounds = grounds;
       copy -> spikes = spikes;
+
+
+      //variables para guardo de hash en matriz de estados visitados
+      uint64_t siguiente;
+      uint64_t algo;
+      uint64_t nexthash;
+      uint64_t nuevo;
+      uint64_t res;
+      uint64_t sum;
+      res = copy-> tail -> direction;
+      nuevo = copy-> hash;
+      sum = copy -> head->next -> direction;
+      nuevo -= res;
+      nuevo /= 4;
+      nuevo += sum*(uint64_t)pow(4, copy ->size -2);
+
+      siguiente = board -> cells[copy -> head -> row][copy -> head -> col].random;
+      nexthash = nuevo ^ siguiente;
+      algo = nexthash % 1000000;
+
+      for (int num = 0; num < 100; num++)
+      {
+        if (board -> matriz[algo][num].valor == 0)
+        {
+          // esto deberia pasar
+          //printf("por aqui paso porque si puedio \n");
+          return copy;
+        }
+        else
+        {
+          if (board -> matriz[algo][num].valor == nexthash)
+          {
+            //significa que ya pase por este estado y debo hacer algo
+            //printf("ya pase por aqui\n" );
+            return NULL;
+          }
+        }
+      }
+
     }
   }
+  else
+  {
+
+    //variables para guardo de hash en matriz de estados visitados
+    uint64_t siguiente;
+    uint64_t algo;
+    uint64_t nexthash;
+    uint64_t nuevo;
+    uint64_t res;
+    uint64_t sum;
+    res = copy-> tail -> direction;
+    nuevo = copy-> hash;
+    sum = copy -> head->next -> direction;
+    nuevo -= res;
+    nuevo /= 4;
+    nuevo += sum*(uint64_t)pow(4, copy ->size -2);
+
+    siguiente = board -> cells[copy -> head -> row][copy -> head -> col].random;
+    nexthash = nuevo ^ siguiente;
+    algo = nexthash % 1000000;
+
+    for (int num = 0; num < 100; num++)
+    {
+      if (board -> matriz[algo][num].valor == 0)
+      {
+        // esto deberia pasar
+        //printf("por aqui paso porque si puedio \n");
+        return copy;
+      }
+      else
+      {
+        if (board -> matriz[algo][num].valor == nexthash)
+        {
+          //significa que ya pase por este estado y debo hacer algo
+          //printf("ya pase por aqui\n" );
+          return NULL;
+        }
+      }
+    }
+  }
+
 
   // Retorno el nuevo snek
   return copy;

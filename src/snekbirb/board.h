@@ -20,7 +20,37 @@ typedef struct cell
   uint8_t height;
   /** Tipo de celda a la que cae */
   CellType fall_type;
+  /** Numero aleatorio que se creara para la tabla de hash */
+  uint64_t random;
 } Cell;
+
+typedef struct hash
+{
+  /** valor de hash del objeto */
+  uint64_t valor;
+} Hash;
+
+typedef struct nodo
+{
+  // snek actual desde donde me voya a mover a nueva pos dada por seg
+  Snek* snek;
+
+  int num;
+  // a donde me voy a mover(up, down, .....)
+  Direction dir;
+  int valor;
+}Nodo;
+
+
+typedef struct lista
+{
+  // lugares por visitar
+  Nodo* nodos;
+  int cabeza;
+  int cola;
+}Lista;
+
+
 
 /** Estructura del tablero */
 typedef struct board
@@ -37,6 +67,12 @@ typedef struct board
   uint8_t portal_row;
   /** Columna del portal */
   uint8_t portal_col;
+  // valor de hash actual del tablero
+  Hash* actual;
+  // matriz de estados de hash ya visitados
+  Hash** matriz;
+
+
 } Board;
 
 ////////////////////////////////////////////////////////////////////////////////

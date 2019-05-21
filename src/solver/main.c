@@ -1,18 +1,22 @@
 #include "../snekbirb/board.h"
 #include "../watcher/watcher.h"
 #include "../random/pcg_basic.h"
+#include <stdlib.h>
+#include "../snekbirb/snek.h"
+#include <math.h>
+
 
 int main(int argc, char *argv[])
 {
   // Revisar el input
   if (argc != 3)
   {
-    printf("Modo de uso: ./snakebirb test.txt output.txt\n");
+    //printf("Modo de uso: ./snakebirb test.txt output.txt\n");
     return 0;
   }
 
   /*
-  El main actualmente usa las funciones de crear y liberar tablero y se aplican
+  El main actualmente usa  las funciones de crear y liberar tablero y se aplican
   movimientos según lo que se escriba por consola. También se abre la interfaz
   gráfica para mostrar su uso. Este código no tiene leaks ni errores y solamente
   sirve para mostrara la forma en que se usan las funciones.
@@ -35,9 +39,7 @@ int main(int argc, char *argv[])
   influencia en la correccion.
   */
 
-  // Ejemplo de generar numero random
-  uint64_t r = get_random();
-  printf("%lu\n", r);
+
 
   // Abro la ventana
   watcher_open(argv[1]);
@@ -51,6 +53,16 @@ int main(int argc, char *argv[])
   // Cierro el archivo
   fclose(file);
 
+  // Inicio las colas visitar y Visitados
+  Lista* visitar =  malloc(sizeof(Lista));
+  visitar -> nodos = malloc(sizeof(Nodo)*1000000);
+  visitar -> cola = 0;
+  visitar -> cabeza = 0;
+
+
+
+
+
   // Dibujo el estado inicial
   watcher_draw_bird(board -> snek);
 
@@ -58,38 +70,52 @@ int main(int argc, char *argv[])
   Direction movs[100];
   int mov_count = 0;
 
-  // Itero pidiendo movimientos al usuario 0 = UP, 1 = LEFT, 2 = RIGHT, 3 = DOWN
-  Direction dir = 0;
-  while (dir < 4)
+  // Agrego a la lista los primeros puntos por visitar dado el snek Inicializa
+
+  Snek* copy;
+  for (int dir =0; dir < 4;dir++)
   {
-    /*
-    Esto es una demo de los movimientos de la serpiente y del modo de uso de la
-    funcion board_move. La idea es que si la serpiente se mueve en una direccion
-    invalida o si la serpiente muere al hacer el movimiento, se retorna NULL y
-    no se modifica el tablero actual.
-    Si el movimiento es válido, se retorna una nueva serpiente con la nueva
-    posición. La serpiente anterior sigue existiendo.
-    Los movimientos hechos se almacenan en el arreglo de movimientos para luego
-    escribirlos en el archivo de output.
-    */
-
-    // Leo un movimiento de la consola
-    scanf("%u", &dir);
-
-    // Almaceno el movimiento en el arreglo
-    movs[mov_count] = dir;
-    mov_count++;
-
-    // Escribo el movimiento en el archivo
-
     // Ejecuto el movimiento
-    Snek* copy = board_move(board, dir);
-
-    // Si hago un movimiento invalido o la serpiente muere, termino
-    if (!copy)
+    //printf("el movimiento que hago eso: %d\n",dir );
+    copy = board_move(board, dir);
+    if(!copy)
     {
-      break;
+      //printf("no valido perro\n");
     }
+    else
+    {
+      for (int i = 0; i <1000000; i++)
+      {
+        if (visitar->nodos[i].valor == 0)
+        {
+          visitar->nodos[i].snek = copy;
+          visitar->nodos[i].dir = dir;
+          visitar->nodos[i].valor = 1;
+          visitar->cola += 1;
+          break;
+        }
+      }
+      // printf("la cabeza esta en [%d.%d]\n",copy->head->row, copy->head->col);
+    }
+  }
+
+
+
+  // printf("la direccion de la cabeza actual es:[%d.%d]\n",board->snek->head->row, board->snek->head->col );
+
+  // Itero pidiendo movimientos al usuario 0 = UP, 1 = LEFT, 2 = RIGHT, 3 = DOWN
+  // printf("---------------------\n");
+
+  // sleep(5);
+  while (visitar->cabeza < visitar->cola)
+
+  {
+
+    //asigno nuevo snek como el primero de cola por visitar
+    copy = visitar->nodos[visitar->cabeza].snek;
+
+    // muevo la cabeza en 1 para siguente por visitar
+    visitar ->cabeza += 1;
 
     // Dibujo el nuevo estado
     watcher_draw_bird(copy);
@@ -100,13 +126,112 @@ int main(int argc, char *argv[])
     // Pongo la nueva serpiente en el tablero
     board -> snek = copy;
 
+    //variables para guardo de hash en matriz de estados visitados
+    uint64_t siguiente;
+    uint64_t algo;
+    uint64_t nexthash;
+    uint64_t nuevo;
+    uint64_t res;
+    uint64_t sum;
+    res = board -> snek-> tail -> direction;
+    nuevo = board -> snek -> hash;
+    sum = board -> snek -> head->next -> direction;
+    nuevo -= res;
+    nuevo /= 4;
+    nuevo += sum*(uint64_t)pow(4, board -> snek ->size -2);
+
+    // El nuevo hash de la srpiente
+    board -> snek -> hash = nuevo;
+
+    siguiente = board -> cells[board->snek -> head -> row][board->snek -> head -> col].random;
+    nexthash = nuevo ^ siguiente;
+    algo = nexthash % 1000000;
+
+
+
+    for (int num = 0; num < 100; num++)
+    {
+      if (board -> matriz[algo][num].valor == 0)
+      {
+        board -> matriz[algo][num].valor = nexthash;
+        break;
+      }
+      else
+      {
+        if (board -> matriz[algo][num].valor == nexthash)
+        {
+          //significa que ya pase por este estado y debo hacer algo
+          //printf("por aqui no deberia pasar MAIN\n");
+
+          // return NULL;
+        }
+      }
+    }
+
+
+    board -> actual -> valor = nexthash;
+
     // Si gane, termino
     if (board_is_win(board))
     {
-      printf("Hurra\n");
+      //printf("Hurra\n");
+      visitar->cabeza -= 1;
+      //printf("la cabeza esta en [%d.%d]\n", visitar->nodos[visitar->cabeza].snek->head->row,
+      //visitar->nodos[visitar->cabeza].snek->head->col);
+      //printf("el valor de cabeza actual es: %d\n", visitar->cabeza);
+      // printf("el valor del nodo de donde vienes es: %d\n", visitar->nodos[visitar->cabeza].num);
+      //printf("el primero es  valor direccion : %d\n", visitar->nodos[visitar->cabeza].dir);
+
+      int num;
+      num = visitar->nodos[visitar->cabeza].num;
+      movs[mov_count] = visitar->nodos[visitar->cabeza].dir;
+      mov_count++;
+      //printf("------------------- %d\n",visitar->nodos[num].dir );
+      movs[mov_count] = visitar->nodos[num].dir;
+      mov_count++;
+      while (num > 0)
+      {
+        num = visitar->nodos[num].num;
+        //printf("el valor del nodo de donde vienes es: %d\n", visitar->nodos[num].num);
+        //printf("el valor direccion : %d\n", visitar->nodos[num].dir);
+        movs[mov_count] = visitar->nodos[num].dir;
+        mov_count++;
+
+      }
+
       break;
     }
+
+    // veo los nuevos moviementos que se pueden hacer desde el nuevo snek
+    for (int dir =0; dir < 4;dir++)
+    {
+      // Ejecuto el movimiento
+      copy = board_move(board, dir);
+      if(!copy)
+      {
+        //printf("no valido perro\n");
+      }
+      else
+      {
+        //printf("si lo puedo hacer \n" );
+        visitar->nodos[visitar->cola].num = visitar->cabeza-1;
+        visitar->nodos[visitar->cola].dir = dir;
+        visitar->nodos[visitar->cola].snek = copy;
+        visitar->cola += 1;
+      }
+    }
+
+
+    // Almaceno el movimiento en el arreglo
+    //movs[mov_count] = dir;
+    //mov_count++;
+
+    // Escribo el movimiento en el archivo
+
   }
+
+
+
 
   // Abro el archivo de output
   FILE* out = fopen(argv[2], "w");
@@ -117,7 +242,7 @@ int main(int argc, char *argv[])
   // Escribo los movimientos
   for (int i = 0; i < mov_count; i++)
   {
-    fprintf(out, "%u\n", movs[i]);
+    fprintf(out, "%u\n", movs[mov_count - i-1]);
   }
 
   // Cierro el archivo de output

@@ -1,4 +1,5 @@
 #include "snek.h"
+#include "board.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -83,6 +84,7 @@ void snek_expand(Snek* snek, Node* node)
 /** Mueve la cola del snek a la cabeza con una direccion dada */
 void snek_move(Snek* snek, Direction direction)
 {
+  
   if (snek -> size == 1)
   {
     // Si el snek tiene 1 solo nodo, cambio su posicion segun la direccion
